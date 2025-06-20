@@ -13,10 +13,6 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    approved: {                    // Thêm trường approved để xác định đã duyệt hay chưa
-      type: Boolean,
-      default: false,              // Mặc định chưa được duyệt
-    },
     role: {
       type: String,
       enum: ["user", "admin"],

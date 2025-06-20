@@ -10,12 +10,7 @@ function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
 
-    const apiUrl = import.meta.env.VITE_API_URL;
-
-    if (!apiUrl) {
-      alert("❌ Thiếu cấu hình biến môi trường VITE_API_URL");
-      return;
-    }
+    const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
 
     try {
       const res = await fetch(`${apiUrl}/api/auth/login`, {
@@ -188,15 +183,7 @@ function Login() {
         </form>
 
         <div style={{ textAlign: "center", marginTop: 10 }}>
-          <span style={{ color: "#aaa", fontSize: 15 }}>
-            Chưa có tài khoản?{" "}
-            <Link
-              to="/dang-ky"
-              style={{ color: "#2196f3", textDecoration: "underline" }}
-            >
-              Đăng ký ngay
-            </Link>
-          </span>
+         
         </div>
       </div>
     </div>

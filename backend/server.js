@@ -17,7 +17,11 @@ const app = express();
 // Danh sách origin frontend được phép truy cập API backend
 const allowedOrigins = [
   'http://localhost:5174',
+  'http://localhost:5175',
+  'http://localhost:3000',
   'https://chinhthuc-jade.vercel.app',
+  'http://app.vphone.vn',
+  'https://app.vphone.vn',
 ];
 
 app.use(cors({
@@ -25,6 +29,11 @@ app.use(cors({
     // Cho phép các request không có origin (Postman, mobile apps)
     if (!origin) return callback(null, true);
     if (!allowedOrigins.includes(origin)) {
+      console.log('⚠️ CORS warning - Origin not in allowlist:', origin);
+      // Trong development, cho phép tất cả origins
+      if (process.env.NODE_ENV !== 'production') {
+        return callback(null, true);
+      }
       const msg = '❌ CORS bị chặn: ' + origin;
       return callback(new Error(msg), false);
     }
@@ -36,14 +45,25 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json());
 
-// Đăng ký các route API
+// ==== Đăng ký các route API ====
 app.use('/api', adminRoutes);
+app.use('/api', reportRoutes); // ĐÃ SỬA, đặt đúng path
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
-app.use('/api/report', reportRoutes);
 app.use('/api/branches', branchRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/cong-no', congNoRoutes);
+
+// API lấy danh sách nhập hàng
+app.get('/api/nhap-hang', async (req, res) => {
+  try {
+    const items = await Inventory.find().sort({ import_date: -1, _id: -1 });
+    res.status(200).json({ items });
+  } catch (error) {
+    console.error('❌ Lỗi khi lấy danh sách nhập hàng:', error.message);
+    res.status(500).json({ message: '❌ Lỗi server khi lấy danh sách', error: error.message });
+  }
+});
 
 // API nhập hàng
 app.post('/api/nhap-hang', async (req, res) => {
@@ -340,10 +360,7 @@ app.delete('/api/xuat-hang/:id', async (req, res) => {
   }
 });
 
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+mongoose.connect(process.env.MONGODB_URI)
 .then(() => console.log('✅ Kết nối MongoDB thành công'))
 .catch(err => console.error('❌ Kết nối MongoDB lỗi:', err));
 

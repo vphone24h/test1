@@ -3,6 +3,22 @@ import LogoutButton from "../components/LogoutButton";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 
+// Hàm lấy ngày hôm nay dạng yyyy-mm-dd
+const getToday = () => {
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
+};
+
+// ---- Định dạng số có dấu cách ----
+function formatNumber(val) {
+  if (val === undefined || val === null || val === "") return "";
+  return val.toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+}
+function parseNumber(val) {
+  if (!val) return "";
+  return val.toString().replace(/\s/g, "");
+}
+
 function NhapHang() {
   // State quản lý branch/category
   const [branches, setBranches] = useState([]);
@@ -14,7 +30,7 @@ function NhapHang() {
   const [editBranchId, setEditBranchId] = useState(null);
   const [editCategoryId, setEditCategoryId] = useState(null);
 
-  // === Lấy mặc định branch/category từ localStorage
+  // Lấy mặc định branch/category từ localStorage
   const getLocalBranch = () => localStorage.getItem('lastBranch') || "";
   const getLocalCategory = () => localStorage.getItem('lastCategory') || "";
 
@@ -23,7 +39,7 @@ function NhapHang() {
     product_name: "",
     sku: "",
     price_import: "",
-    import_date: "",
+    import_date: getToday(),
     supplier: "",
     branch: getLocalBranch(),
     note: "",
@@ -38,32 +54,64 @@ function NhapHang() {
   const [filterDate, setFilterDate] = useState("");
   const [filterBranch, setFilterBranch] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
+  const [filterSupplier, setFilterSupplier] = useState("");
   const [page, setPage] = useState(1);
   const itemsPerPage = 20;
   const [editingItemId, setEditingItemId] = useState(null);
 
   const inputClass = "w-full border border-blue-300 p-2 rounded h-10 focus:outline-none focus:ring-2 focus:ring-blue-500";
 
+  // Fetch đúng API nhập hàng, hiển thị mọi bản ghi nhập, không bị trừ số lượng
   const fetchItems = async () => {
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/ton-kho`);
+      // Debug API URL
+      const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+      console.log('🔍 API URL:', apiUrl);
+      
+      const res = await fetch(`${apiUrl}/api/nhap-hang`);
+      console.log('📡 API Response status:', res.status);
+      
+      if (!res.ok) {
+        throw new Error(`API Error: ${res.status} - ${res.statusText}`);
+      }
+      
       const data = await res.json();
-      setItems(data.items);
+      console.log('📊 Data received:', data?.items?.length, 'items');
+      
+      if (!data.items) {
+        console.error('❌ No items in response:', data);
+        return;
+      }
+      
+      // Sắp xếp mới nhất lên đầu (theo ngày nhập, nếu trùng ngày thì theo id)
+      const sorted = data.items.sort((a, b) => {
+        const dateA = a.import_date || '';
+        const dateB = b.import_date || '';
+        if (dateA > dateB) return -1;
+        if (dateA < dateB) return 1;
+        return b._id.localeCompare(a._id);
+      });
+      
+      setItems(sorted);
+      console.log('✅ Items set:', sorted.length);
     } catch (err) {
       console.error("❌ Lỗi khi tải dữ liệu nhập hàng:", err);
     }
   };
 
-  // Bổ sung fetch branch/category
   const fetchBranches = () => {
-    fetch(`${import.meta.env.VITE_API_URL}/api/branches`)
+    const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+    fetch(`${apiUrl}/api/branches`)
       .then(res => res.json())
-      .then(data => setBranches(data));
+      .then(data => setBranches(data))
+      .catch(err => console.error('❌ Lỗi fetch branches:', err));
   };
   const fetchCategories = () => {
-    fetch(`${import.meta.env.VITE_API_URL}/api/categories`)
+    const apiUrl = import.meta.env.VITE_API_URL || window.location.origin;
+    fetch(`${apiUrl}/api/categories`)
       .then(res => res.json())
-      .then(data => setCategories(data));
+      .then(data => setCategories(data))
+      .catch(err => console.error('❌ Lỗi fetch categories:', err));
   };
 
   useEffect(() => {
@@ -72,16 +120,16 @@ function NhapHang() {
     fetchCategories();
   }, []);
 
-  // Khi chọn branch/category thì lưu vào localStorage
   const handleChange = (e) => {
     const { name, value } = e.target;
-    if (name === "branch") {
-      localStorage.setItem('lastBranch', value);
+    if (name === "branch") localStorage.setItem('lastBranch', value);
+    if (name === "category") localStorage.setItem('lastCategory', value);
+    // Xử lý riêng cho price_import: luôn parse về số, giữ định dạng nhập
+    if (name === "price_import") {
+      setFormData((prev) => ({ ...prev, [name]: parseNumber(value) }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
     }
-    if (name === "category") {
-      localStorage.setItem('lastCategory', value);
-    }
-    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e) => {
@@ -106,7 +154,7 @@ function NhapHang() {
           product_name: "",
           sku: "",
           price_import: "",
-          import_date: "",
+          import_date: getToday(),
           supplier: "",
           branch: formData.branch,
           note: "",
@@ -130,7 +178,7 @@ function NhapHang() {
       product_name: item.product_name || item.tenSanPham,
       sku: item.sku,
       price_import: item.price_import,
-      import_date: item.import_date?.slice(0, 10) || "",
+      import_date: item.import_date?.slice(0, 10) || getToday(),
       supplier: item.supplier,
       branch: item.branch,
       note: item.note,
@@ -185,7 +233,12 @@ function NhapHang() {
       const wb = XLSX.read(evt.target.result, { type: "binary" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(ws);
+
+      const existImeis = new Set(items.map(i => i.imei));
+      let countAdded = 0, countSkip = 0;
+
       for (const row of data) {
+        if (row.IMEI && existImeis.has(row.IMEI)) { countSkip++; continue; }
         await fetch(`${import.meta.env.VITE_API_URL}/api/nhap-hang`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -203,13 +256,19 @@ function NhapHang() {
             tenSanPham: row.Tên_sản_phẩm
           })
         });
+        if (row.IMEI) existImeis.add(row.IMEI);
+        countAdded++;
       }
       fetchItems();
-      alert("✅ Đã nhập từ Excel thành công!");
+      alert(`✅ Đã nhập từ Excel thành công! Đã thêm: ${countAdded} dòng, Bỏ qua trùng IMEI: ${countSkip} dòng`);
     };
     reader.readAsBinaryString(file);
   };
 
+  // Danh sách nhà cung cấp (duy nhất)
+  const uniqueSuppliers = Array.from(new Set(items.map(i => i.supplier || ""))).filter(Boolean);
+
+  // Bộ lọc nâng cao: thêm lọc nhà cung cấp
   const filteredItems = items.filter((item) => {
     const matchSearch =
       item.imei?.toLowerCase().includes(search.toLowerCase()) ||
@@ -218,13 +277,14 @@ function NhapHang() {
     const matchDate = filterDate ? item.import_date?.slice(0, 10) === filterDate : true;
     const matchBranch = filterBranch ? item.branch === filterBranch : true;
     const matchCategory = filterCategory ? item.category === filterCategory : true;
-    return matchSearch && matchDate && matchBranch && matchCategory;
+    const matchSupplier = filterSupplier ? (item.supplier && item.supplier === filterSupplier) : true;
+    return matchSearch && matchDate && matchBranch && matchCategory && matchSupplier;
   });
 
   const paginatedItems = filteredItems.slice((page - 1) * itemsPerPage, page * itemsPerPage);
   const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
 
-  // ----------- Quản lý branch
+  // Các hàm quản lý branch/category giữ nguyên như code cũ
   const handleAddBranch = async () => {
     if (!branchInput.trim()) return;
     await fetch(`${import.meta.env.VITE_API_URL}/api/branches`, {
@@ -254,8 +314,6 @@ function NhapHang() {
     await fetch(`${import.meta.env.VITE_API_URL}/api/branches/${id}`, { method: "DELETE" });
     fetchBranches();
   };
-
-  // ----------- Quản lý category
   const handleAddCategory = async () => {
     if (!categoryInput.trim()) return;
     await fetch(`${import.meta.env.VITE_API_URL}/api/categories`, {
@@ -289,6 +347,7 @@ function NhapHang() {
   return (
     <div className="max-w-5xl mx-auto p-6 bg-blue-50 rounded-xl shadow mt-10 relative">
       {/* Modal branch */}
+      {/* ... Modal code giữ nguyên ... */}
       {showBranchModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-20 z-50">
           <div className="bg-white p-6 rounded shadow-md min-w-[300px]">
@@ -326,7 +385,7 @@ function NhapHang() {
         </div>
       )}
 
-      {/* Modal category */}
+      {/* Modal category giữ nguyên ... */}
       {showCategoryModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-20 z-50">
           <div className="bg-white p-6 rounded shadow-md min-w-[300px]">
@@ -368,6 +427,7 @@ function NhapHang() {
         <LogoutButton />
       </div>
 
+      {/* ... Các nút menu giữ nguyên ... */}
       <div className="flex justify-center space-x-2 mb-6">
         <button
           onClick={() => (window.location.href = "/nhap-hang")}
@@ -397,41 +457,10 @@ function NhapHang() {
 
       <h2 className="text-2xl font-bold mb-6 text-center text-blue-700">Nhập hàng iPhone</h2>
 
-      {/* ---- BỘ LỌC --- */}
-      <div className="flex gap-4 mb-4">
-        <input
-          type="date"
-          value={filterDate}
-          onChange={(e) => setFilterDate(e.target.value)}
-          className="border border-blue-300 p-2 rounded w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="Ngày nhập"
-        />
-        <select
-          value={filterBranch}
-          onChange={(e) => setFilterBranch(e.target.value)}
-          className="border border-blue-300 p-2 rounded w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="">Chi nhánh</option>
-          {branches.map((b) => (
-            <option key={b._id} value={b.name}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filterCategory}
-          onChange={(e) => setFilterCategory(e.target.value)}
-          className="border border-blue-300 p-2 rounded w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="">Thư mục</option>
-          {categories.map((c) => (
-            <option key={c._id} value={c.name}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {/* Ô tìm kiếm */}
+   
 
+      {/* Xuất/nhập Excel */}
       <div className="flex justify-between mb-4 gap-4">
         <label className="flex items-center bg-blue-600 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-700">
           📤 Nhập từ Excel
@@ -445,6 +474,7 @@ function NhapHang() {
         </button>
       </div>
 
+      {/* Form nhập hàng */}
       <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4">
         <input
           name="imei"
@@ -469,11 +499,12 @@ function NhapHang() {
           className={inputClass}
           required
         />
+        {/* Giá nhập: nhập và hiển thị có dấu cách 3 số */}
         <input
           name="price_import"
-          type="number"
+          type="text"
           placeholder="Giá nhập"
-          value={formData.price_import}
+          value={formatNumber(formData.price_import)}
           onChange={handleChange}
           className={inputClass}
           required
@@ -494,7 +525,6 @@ function NhapHang() {
           onChange={handleChange}
           className={inputClass}
         />
-
         {/* Chi nhánh: dropdown + nút quản lý */}
         <div className="flex gap-2 items-center">
           <select name="branch" value={formData.branch} onChange={handleChange} className={inputClass} required>
@@ -503,20 +533,38 @@ function NhapHang() {
               <option key={b._id} value={b.name}>{b.name}</option>
             ))}
           </select>
-          <button type="button" className="text-green-600 text-xl" title="Thêm" onClick={() => { setShowBranchModal(true); setEditBranchId(null); setBranchInput(''); }}>➕</button>
-          <button type="button" className="text-yellow-600 text-xl" title="Sửa" onClick={() => {
-            if (!formData.branch) return;
-            const br = branches.find(b => b.name === formData.branch);
-            setEditBranchId(br?._id);
-            setBranchInput(formData.branch);
-            setShowBranchModal(true);
-          }}>✏️</button>
-          <button type="button" className="text-red-600 text-xl" title="Xoá" onClick={() => {
-            const br = branches.find(b => b.name === formData.branch);
-            if (br) handleDeleteBranch(br._id);
-          }}>🗑️</button>
+          <button
+            type="button"
+            className="text-green-600 text-xl"
+            title="Thêm"
+            onClick={() => {
+              setShowBranchModal(true);
+              setEditBranchId(null);
+              setBranchInput('');
+            }}
+          >➕</button>
+          <button
+            type="button"
+            className="text-yellow-600 text-xl"
+            title="Sửa"
+            onClick={() => {
+              if (!formData.branch) return;
+              const br = branches.find(b => b.name === formData.branch);
+              setEditBranchId(br?._id);
+              setBranchInput(formData.branch);
+              setShowBranchModal(true);
+            }}
+          >✏️</button>
+          <button
+            type="button"
+            className="text-red-600 text-xl"
+            title="Xoá"
+            onClick={() => {
+              const br = branches.find(b => b.name === formData.branch);
+              if (br) handleDeleteBranch(br._id);
+            }}
+          >🗑️</button>
         </div>
-
         <input
           name="note"
           placeholder="Ghi chú"
@@ -533,7 +581,6 @@ function NhapHang() {
           className={inputClass}
           required
         />
-
         {/* Thư mục: dropdown + nút quản lý */}
         <div className="flex gap-2 items-center">
           <select name="category" value={formData.category} onChange={handleChange} className={inputClass} required>
@@ -542,20 +589,34 @@ function NhapHang() {
               <option key={c._id} value={c.name}>{c.name}</option>
             ))}
           </select>
-          <button type="button" className="text-green-600 text-xl" title="Thêm" onClick={() => { setShowCategoryModal(true); setEditCategoryId(null); setCategoryInput(''); }}>➕</button>
-          <button type="button" className="text-yellow-600 text-xl" title="Sửa" onClick={() => {
-            if (!formData.category) return;
-            const cat = categories.find(c => c.name === formData.category);
-            setEditCategoryId(cat?._id);
-            setCategoryInput(formData.category);
-            setShowCategoryModal(true);
-          }}>✏️</button>
-          <button type="button" className="text-red-600 text-xl" title="Xoá" onClick={() => {
-            const cat = categories.find(c => c.name === formData.category);
-            if (cat) handleDeleteCategory(cat._id);
-          }}>🗑️</button>
+          <button
+            type="button"
+            className="text-green-600 text-xl"
+            title="Thêm"
+            onClick={() => { setShowCategoryModal(true); setEditCategoryId(null); setCategoryInput(''); }}
+          >➕</button>
+          <button
+            type="button"
+            className="text-yellow-600 text-xl"
+            title="Sửa"
+            onClick={() => {
+              if (!formData.category) return;
+              const cat = categories.find(c => c.name === formData.category);
+              setEditCategoryId(cat?._id);
+              setCategoryInput(formData.category);
+              setShowCategoryModal(true);
+            }}
+          >✏️</button>
+          <button
+            type="button"
+            className="text-red-600 text-xl"
+            title="Xoá"
+            onClick={() => {
+              const cat = categories.find(c => c.name === formData.category);
+              if (cat) handleDeleteCategory(cat._id);
+            }}
+          >🗑️</button>
         </div>
-
         <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded hover:bg-blue-700 font-semibold">
           {editingItemId ? "Cập nhật" : "Nhập hàng"}
         </button>
@@ -564,7 +625,59 @@ function NhapHang() {
       {message && <p className="mt-4 text-center font-semibold text-green-600">{message}</p>}
 
       <div className="mt-10">
-        <input type="text" placeholder="🔍 Tìm kiếm IMEI, Tên, SKU..." value={search} onChange={(e) => setSearch(e.target.value)} className="border border-blue-300 px-4 py-2 rounded w-full mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+           <input
+        type="text"
+        placeholder="🔍 Tìm kiếm IMEI, Tên, SKU..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="border border-blue-300 px-4 py-2 rounded w-full mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+
+      {/* Bộ lọc nâng cao */}
+      <div className="flex flex-wrap gap-2 md:gap-4 mb-4 items-center">
+        <input
+          type="date"
+          value={filterDate}
+          onChange={(e) => setFilterDate(e.target.value)}
+          className="border border-blue-300 p-2 rounded w-36 md:w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="Ngày nhập"
+        />
+        <select
+          value={filterBranch}
+          onChange={(e) => setFilterBranch(e.target.value)}
+          className="border border-blue-300 p-2 rounded w-32 md:w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Chi nhánh</option>
+          {branches.map((b) => (
+            <option key={b._id} value={b.name}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filterCategory}
+          onChange={(e) => setFilterCategory(e.target.value)}
+          className="border border-blue-300 p-2 rounded w-32 md:w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Thư mục</option>
+          {categories.map((c) => (
+            <option key={c._id} value={c.name}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={filterSupplier}
+          onChange={e => setFilterSupplier(e.target.value)}
+          className="border border-blue-300 p-2 rounded w-32 md:w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Nhà cung cấp</option>
+          {uniqueSuppliers.map((s, idx) => (
+            <option key={idx} value={s}>{s}</option>
+          ))}
+        </select>
+      </div>
+
         <table className="w-full border text-sm">
           <thead>
             <tr className="bg-blue-100">
@@ -574,6 +687,7 @@ function NhapHang() {
               <th className="border border-blue-300 p-2 text-center">Giá nhập</th>
               <th className="border border-blue-300 p-2">Ngày nhập</th>
               <th className="border border-blue-300 p-2">Số lượng</th>
+              <th className="border border-blue-300 p-2 text-green-800">Số lượng còn lại</th>
               <th className="border border-blue-300 p-2">Thư mục</th>
               <th className="border border-blue-300 p-2">Nhà cung cấp</th>
               <th className="border border-blue-300 p-2">Chi nhánh</th>
@@ -587,9 +701,19 @@ function NhapHang() {
                 <td className="border border-blue-300 p-2">{item.imei}</td>
                 <td className="border border-blue-300 p-2">{item.product_name || item.tenSanPham}</td>
                 <td className="border border-blue-300 p-2">{item.sku}</td>
-                <td className="border border-blue-300 p-2 text-center">{item.price_import?.toLocaleString()}đ</td>
+                {/* Hiển thị giá nhập có dấu cách 3 số */}
+                <td className="border border-blue-300 p-2 text-center">{formatNumber(item.price_import)}đ</td>
                 <td className="border border-blue-300 p-2">{item.import_date?.slice(0, 10)}</td>
                 <td className="border border-blue-300 p-2">{item.quantity}</td>
+                {/* Số lượng còn lại */}
+                <td className="border border-blue-300 p-2 text-green-700 font-semibold">
+                  {item.imei
+                    ? (item.status === 'sold'
+                        ? <span className="text-red-600 font-bold">Đã bán</span>
+                        : 1)
+                    : (item.quantity ?? 1)
+                  }
+                </td>
                 <td className="border border-blue-300 p-2">{item.category}</td>
                 <td className="border border-blue-300 p-2">{item.supplier}</td>
                 <td className="border border-blue-300 p-2">{item.branch}</td>
@@ -602,6 +726,21 @@ function NhapHang() {
             ))}
           </tbody>
         </table>
+        {/* Thông tin tổng hợp */}
+        <div className="font-semibold mt-4 text-right text-blue-700 space-y-1">
+          <div>Tổng số sản phẩm: {filteredItems.length} sản phẩm</div>
+          <div>Đã bán: {filteredItems.filter(item => item.status === 'sold').length} sản phẩm</div>
+          <div>Còn lại: {filteredItems.filter(item => item.status !== 'sold').length} sản phẩm</div>
+          <div>Tổng tiền nhập hàng (chưa bán):{" "}
+          {formatNumber(
+              filteredItems
+                .filter(item => item.status !== 'sold') // Chỉ tính sản phẩm chưa bán
+                .reduce((sum, item) =>
+              sum + (Number(item.price_import || 0) * Number(item.quantity || 1)), 0
+            )
+          )}đ
+          </div>
+        </div>
         <div className="flex justify-center space-x-2 mt-4">
           {Array.from({ length: totalPages }, (_, i) => (
             <button key={i + 1} onClick={() => setPage(i + 1)} className={`px-3 py-1 rounded ${page === i + 1 ? "bg-blue-600 text-white" : "bg-gray-200"}`}>
